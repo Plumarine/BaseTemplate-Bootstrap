@@ -8,56 +8,78 @@ function meta_html() {
 
         switch(true) {
             case ($ver < 7):
-                $res = '<html class="no-js lt-ie9 lt-ie8 lt-ie7">';
+                $res = 'no-js lt-ie9 lt-ie8 lt-ie7';
             break;
             case ($ver == 7):
-                $res = '<html class="no-js lt-ie9 lt-ie8">';
+                $res = 'no-js lt-ie9 lt-ie8';
             break;
             case ($ver == 8):
-                $res = '<html class="no-js lt-ie9">';
+                $res = 'no-js lt-ie9';
             break;
             default:
-                $res = '<html class="no-js">';
+                $res = 'no-js';
             break;
         }
     } else {
-        $res = '<html class="no-js">';
+        $res = 'no-js';
     }
 
-    return (string)$res."\n";
+    if (OG_STATE) {
+        $opengraph = ' prefix="og: http://ogp.me/ns#"';
+    } else {
+        $opengraph = null;
+    }
+
+    print('<html class="'.(string)$res.'"'.$opengraph.'>'."\n");
 }
 
 
-function checkJQUERY($state) {
-    if (@file_exists(JQ_LOCAL)) {
-        $state_jq_local = true;
-    } else {
-        $state_jq_local = false;
+function check_jquery($state, $ver_use) {
+    global $var;
+    switch($ver_use) {
+        case 1:  $ver = JQ_VER_1X; break;
+        case 2:  $ver = JQ_VER_2X; break;
+        default: $ver = 0; break;
     }
 
-    if ($state) {
-        if (@fopen('http:'.JQ_REMOTE, 'r')) {
-            $res = "\t\t".'<script defer src="'.JQ_REMOTE.'" defer></script>'."\n";
+    if ($ver != 0){
+        $lib_remote = 'http://ajax.googleapis.com/ajax/libs/jquery/'.$ver.'/jquery.min.js';
+        $lib_local  = 'js/vendor/jquery-'.$ver.'.min.js';
 
-            if ($state_jq_local) {
-                $res.= "\t\t".'<script defer>window.jQuery || document.write(\'<script defer src="gzip.php?f='.JQ_LOCAL.'"><\/script>\')</script>'."\n";
+        if (@file_exists($lib_local)) {
+            $state_jq_local = true;
+        } else {
+            $state_jq_local = false;
+        }
+
+        if ($state) {
+            if (@fopen($lib_remote, 'r')) {
+                $res = "\t\t".'<script defer src="'.$lib_remote.'"></script>'."\n";
+
+                if ($state_jq_local) {
+                    $res.= "\t\t".'<script defer>window.jQuery || document.write(\'<script defer src="gzip.php?f='.$lib_local.'"><\/script>\')</script>'."\n";
+                }
+            } else {
+                $res = "\t\t".'<script defer src="gzip.php?f='.$lib_local.'"></script>'."\n";
             }
         } else {
-            $res = "\t\t".'<script defer src="gzip.php?f='.JQ_LOCAL.'"></script>'."\n";
+            if ($state_jq_local) {
+                $res = "\t\t".'<script defer src="gzip.php?f='.$lib_local.'"></script>'."\n";
+            } else {
+                $res = null;
+            }
         }
-    } else {
-        if ($state_jq_local) {
-            $res = "\t\t".'<script defer src="gzip.php?f='.JQ_LOCAL.'"></script>'."\n";
-        } else {
-            $res = null;
-        }
-    }
 
-    return (string)$res;
+        define('JQ_STATE', true);
+        echo (string)$res;
+    } else {
+        define('JQ_STATE', false);
+        $var.= 'var $jq_state=false;';
+    }
 }
 
 
-function checkGA_SA($sa, $dom) {
+function check_ga_sa($sa, $dom) {
     $check = '#^UA+-[0-9]+-[0-9]{1,2}$#';
 
     if (!empty($sa)) {
@@ -87,17 +109,11 @@ function checkGA_SA($sa, $dom) {
         $res = "alert('Error : Google Analytics >> setAccount empty (GA_SA)');";
     }
 
-    return "\t\t"."<script defer>".(string)$res."</script>"."\n";
+    print("\t\t"."<script defer>".(string)$res."</script>"."\n");
 }
 
 
-function social_network(){
-    $array = array(
-        "fb" => array("state" => (boolean)SN_FACEBOOK, "script" => (string)SN_FACEBOOK_JS),
-        "gg" => array("state" => (boolean)SN_GOOGLE,   "script" => (string)SN_GOOGLE_JS),
-        "tw" => array("state" => (boolean)SN_TWITTER,  "script" => (string)SN_TWITTER_JS)
-    );
-
+function social_network($array){
     $res = null;
     $i = 0;
 
@@ -113,8 +129,58 @@ function social_network(){
     }
 
     if ($i > 0) {
-        return "\t\t"."<script defer>".(string)$res."</script>"."\n";
+        print("\t\t"."<script defer>".(string)$res."</script>"."\n");
     }
+}
+
+
+function open_graph($array){
+    $res = null;
+    $i = 0;
+
+    foreach($array as $key=>$value) {
+        if (!empty($value)) {
+            if ($key === 'image') {
+                list ($width, $height, $type, $attr) = info_image($value);
+                $res.= "\t\t".'<meta property="og:image" content="'.trim($value).'">'."\n";
+                $res.= "\t\t".'<meta property="og:image:type" content="'.$type.'">'."\n";
+                $res.= "\t\t".'<meta property="og:image:width" content="'.$width.'">'."\n";
+                $res.= "\t\t".'<meta property="og:image:height" content="'.$height.'">'."\n";
+            } else {
+                $res.= "\t\t".'<meta property="og:'.trim(strtolower($key)).'" content="'.trim($value).'">'."\n";
+            }
+            $i++;
+        }
+    }
+
+    if ($i > 0) {
+        print((string)$res);
+    }
+}
+
+
+function info_image($img){
+    list($width, $height, $type, $attr) = getimagesize($img);
+    switch($type){
+        case 1:  $type = 'image/gif'; break;
+        case 2:  $type = 'image/jpeg'; break;
+        case 3:  $type = 'image/png'; break;
+        case 4:  $type = 'application/x-shockwave-flash'; break;
+        case 5:  $type = 'image/psd'; break;
+        case 6:  $type = 'image/bmp'; break;
+        case 7:  $type = 'image/tiff'; break;
+        case 8:  $type = 'image/tiff'; break;
+        case 9:  $type = 'application/octet-stream'; break;
+        case 10: $type = 'image/jp2'; break;
+        case 11: $type = 'application/octet-stream'; break;
+        case 12: $type = 'application/octet-stream'; break;
+        case 13: $type = 'application/x-shockwave-flash'; break;
+        case 14: $type = 'image/iff'; break;
+        case 15: $type = 'image/vnd.wap.wbmp'; break;
+        case 16: $type = 'image/xbm'; break;
+        case 17: $type = 'image/vnd.microsoft.icon'; break;
+    }
+    return array($width, $height, $type, $attr);
 }
 
 ?>
